@@ -1,0 +1,22 @@
+{
+  "questions": [
+    {
+      "id": "water_desalination",
+      "tool": "find_technologies",
+      "input": {
+        "problem": "обессоливание шахтных вод",
+        "input_stream": {"type": "water", "components": [
+          {"name": "SO4", "min": 200, "max": 300, "unit": "mg/L"},
+          {"name": "Cl", "min": 200, "max": 300, "unit": "mg/L"},
+          {"name": "Ca", "min": 200, "max": 300, "unit": "mg/L"},
+          {"name": "Mg", "min": 200, "max": 300, "unit": "mg/L"},
+          {"name": "Na", "min": 200, "max": 300, "unit": "mg/L"}
+        ]},
+        "target": {"parameter": "dry residue", "max": 1000, "unit": "mg/L"}
+      }
+    },
+    {"id": "catholyte_flow", "tool": "find_experiments", "input": {"material": "nickel catholyte", "process": "electrowinning", "property": "flow rate"}},
+    {"id": "precious_distribution", "tool": "find_experiments", "input": {"material": "copper nickel matte", "process": "smelting", "property": "Au Ag PGM distribution"}},
+    {"id": "mine_water_injection", "tool": "find_technologies", "input": {"problem": "закачка шахтных вод в глубокие горизонты", "input_stream": {"type": "water", "components": []}}}
+  ]
+}

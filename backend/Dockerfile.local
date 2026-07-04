@@ -1,0 +1,39 @@
+FROM python:3.12-slim
+
+WORKDIR /code
+ENV PORT=8000
+ENV PYTHONUNBUFFERED=1
+ENV PIP_NO_CACHE_DIR=1
+ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}
+
+EXPOSE 8000
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       antiword \
+       build-essential \
+       cmake \
+       fonts-dejavu \
+       fonts-liberation \
+       git \
+       libgl1 \
+       libglib2.0-0 \
+       libglx-mesa0 \
+       libgomp1 \
+       libmagic1 \
+       libreoffice-calc \
+       libreoffice-core \
+       libreoffice-writer \
+       poppler-utils \
+       tesseract-ocr \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt /code/requirements.txt
+RUN python -m pip install --upgrade pip \
+    && pip install -r /code/requirements.txt \
+    && python -m nltk.downloader -d /usr/local/nltk_data punkt averaged_perceptron_tagger
+
+COPY . /code
+RUN rm -f /code/.env
+
+CMD ["gunicorn", "score:app", "--workers", "2", "--threads", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--timeout", "300"]

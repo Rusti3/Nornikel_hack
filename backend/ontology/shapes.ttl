@@ -1,0 +1,37 @@
+@prefix mekg: <https://nornickel.example/mekg/> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+mekg:MeasurementShape a sh:NodeShape ;
+  sh:targetClass mekg:Measurement ;
+  sh:property [ sh:path mekg:id ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path mekg:MEASURES_PROPERTY ; sh:minCount 1 ; sh:class mekg:Property ] ;
+  sh:or (
+    [ sh:property [ sh:path mekg:numeric_value ; sh:minCount 1 ; sh:datatype xsd:decimal ] ]
+    [ sh:property [ sh:path mekg:value_min ; sh:minCount 1 ; sh:datatype xsd:decimal ] ]
+    [ sh:property [ sh:path mekg:value_max ; sh:minCount 1 ; sh:datatype xsd:decimal ] ]
+  ) ;
+  sh:property [ sh:path mekg:HAS_UNIT ; sh:minCount 1 ; sh:class mekg:Unit ] ;
+  sh:property [ sh:path mekg:EVIDENCED_BY ; sh:minCount 1 ] ;
+  sh:property [ sh:path mekg:validation_status ; sh:minCount 1 ] .
+
+mekg:ConditionShape a sh:NodeShape ;
+  sh:targetClass mekg:Condition ;
+  sh:property [ sh:path mekg:id ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path mekg:HAS_PARAMETER ; sh:minCount 1 ; sh:class mekg:Parameter ] ;
+  sh:property [ sh:path mekg:comparator ; sh:minCount 1 ; sh:in ("=" "<" "<=" ">" ">=" "range") ] ;
+  sh:property [ sh:path mekg:EVIDENCED_BY ; sh:minCount 1 ] ;
+  sh:property [ sh:path mekg:validation_status ; sh:minCount 1 ] .
+
+mekg:ClaimShape a sh:NodeShape ;
+  sh:targetClass mekg:Claim ;
+  sh:property [ sh:path mekg:id ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path mekg:source_text ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path mekg:SUPPORTED_BY ; sh:minCount 1 ; sh:class mekg:EvidencePack ] ;
+  sh:property [ sh:path mekg:validation_status ; sh:minCount 1 ] .
+
+mekg:RelationshipAssertionShape a sh:NodeShape ;
+  sh:targetClass mekg:RelationshipAssertion ;
+  sh:property [ sh:path mekg:id ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path mekg:EVIDENCED_BY ; sh:minCount 1 ] ;
+  sh:property [ sh:path mekg:validation_status ; sh:minCount 1 ] .

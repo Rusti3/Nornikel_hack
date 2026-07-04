@@ -1,0 +1,233 @@
+@prefix mekg: <https://nornickel.example/mekg/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+mekg: a owl:Ontology ;
+  rdfs:label "Metallurgical Evidence Knowledge Graph"@en,
+             "Верифицируемый граф металлургических R&D-знаний"@ru ;
+  owl:versionInfo "1.0.0" .
+
+# Source layer
+mekg:SourceEntity a owl:Class .
+mekg:Document a owl:Class ; rdfs:subClassOf mekg:SourceEntity .
+mekg:DocumentVersion a owl:Class ; rdfs:subClassOf mekg:SourceEntity .
+mekg:Publication a owl:Class ; rdfs:subClassOf mekg:Document .
+mekg:Page a owl:Class ; rdfs:subClassOf mekg:SourceEntity .
+mekg:Slide a owl:Class ; rdfs:subClassOf mekg:Page .
+mekg:Chunk a owl:Class ; rdfs:subClassOf mekg:SourceEntity .
+mekg:Table a owl:Class ; rdfs:subClassOf mekg:SourceEntity .
+mekg:TableRow a owl:Class ; rdfs:subClassOf mekg:SourceEntity .
+mekg:Figure a owl:Class ; rdfs:subClassOf mekg:SourceEntity .
+mekg:Formula a owl:Class ; rdfs:subClassOf mekg:SourceEntity .
+mekg:SourceReference a owl:Class ; rdfs:subClassOf mekg:SourceEntity .
+
+# Canonical material and stream layer
+mekg:CanonicalEntity a owl:Class .
+mekg:Material a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:Substance a owl:Class ; rdfs:subClassOf mekg:Material .
+mekg:ChemicalCompound a owl:Class ; rdfs:subClassOf mekg:Substance .
+mekg:Element a owl:Class ; rdfs:subClassOf mekg:Substance .
+mekg:Ion a owl:Class ; rdfs:subClassOf mekg:Substance .
+mekg:Solution a owl:Class ; rdfs:subClassOf mekg:Material .
+mekg:Ore a owl:Class ; rdfs:subClassOf mekg:Material .
+mekg:Concentrate a owl:Class ; rdfs:subClassOf mekg:Material .
+mekg:Slag a owl:Class ; rdfs:subClassOf mekg:Material .
+mekg:Matte a owl:Class ; rdfs:subClassOf mekg:Material .
+mekg:Cathode a owl:Class ; rdfs:subClassOf mekg:Material .
+mekg:Anode a owl:Class ; rdfs:subClassOf mekg:Material .
+mekg:Waste a owl:Class ; rdfs:subClassOf mekg:Material .
+mekg:GasStream a owl:Class ; rdfs:subClassOf mekg:Material .
+mekg:WaterStream a owl:Class ; rdfs:subClassOf mekg:Material .
+mekg:Product a owl:Class ; rdfs:subClassOf mekg:Material .
+mekg:ByProduct a owl:Class ; rdfs:subClassOf mekg:Product .
+mekg:Phase a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:GasComponent a owl:Class ; rdfs:subClassOf mekg:Substance .
+
+# Processes and equipment
+mekg:Process a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:ProcessStep a owl:Class ; rdfs:subClassOf mekg:Process .
+mekg:Technology a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:Method a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:Regime a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:UnitOperation a owl:Class ; rdfs:subClassOf mekg:Process .
+mekg:HydrometallurgicalProcess a owl:Class ; rdfs:subClassOf mekg:Process .
+mekg:PyrometallurgicalProcess a owl:Class ; rdfs:subClassOf mekg:Process .
+mekg:EnvironmentalProcess a owl:Class ; rdfs:subClassOf mekg:Process .
+mekg:WasteProcessingProcess a owl:Class ; rdfs:subClassOf mekg:Process .
+mekg:ElectrowinningProcess a owl:Class ; rdfs:subClassOf mekg:Process .
+mekg:LeachingProcess a owl:Class ; rdfs:subClassOf mekg:Process .
+mekg:SmeltingProcess a owl:Class ; rdfs:subClassOf mekg:Process .
+mekg:DesalinationProcess a owl:Class ; rdfs:subClassOf mekg:Process .
+mekg:GasCleaningProcess a owl:Class ; rdfs:subClassOf mekg:Process .
+mekg:MineWaterInjectionProcess a owl:Class ; rdfs:subClassOf mekg:Process .
+mekg:Equipment a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:Facility a owl:Class ; rdfs:subClassOf mekg:Equipment .
+mekg:Unit a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:Dimension a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:Cell a owl:Class ; rdfs:subClassOf mekg:Equipment .
+mekg:Furnace a owl:Class ; rdfs:subClassOf mekg:Equipment .
+mekg:Reactor a owl:Class ; rdfs:subClassOf mekg:Equipment .
+mekg:Filter a owl:Class ; rdfs:subClassOf mekg:Equipment .
+mekg:MembraneUnit a owl:Class ; rdfs:subClassOf mekg:Equipment .
+mekg:Pump a owl:Class ; rdfs:subClassOf mekg:Equipment .
+mekg:Pipeline a owl:Class ; rdfs:subClassOf mekg:Equipment .
+mekg:GasCleaningSystem a owl:Class ; rdfs:subClassOf mekg:Equipment .
+mekg:ElectrowinningBath a owl:Class ; rdfs:subClassOf mekg:Cell .
+mekg:FlashSmeltingFurnace a owl:Class ; rdfs:subClassOf mekg:Furnace .
+
+# Experiment/case layer
+mekg:Experiment a owl:Class .
+mekg:DistributionExperiment a owl:Class ; rdfs:subClassOf mekg:Experiment .
+mekg:CaseStudy a owl:Class ; rdfs:subClassOf mekg:Experiment .
+mekg:IndustrialPractice a owl:Class ; rdfs:subClassOf mekg:CaseStudy .
+mekg:LabTest a owl:Class ; rdfs:subClassOf mekg:Experiment .
+mekg:PilotTest a owl:Class ; rdfs:subClassOf mekg:Experiment .
+mekg:FullScaleOperation a owl:Class ; rdfs:subClassOf mekg:Experiment .
+mekg:Sample a owl:Class .
+mekg:Feed a owl:Class ; rdfs:subClassOf mekg:Sample .
+mekg:Output a owl:Class ; rdfs:subClassOf mekg:Sample .
+mekg:Condition a owl:Class .
+mekg:Parameter a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:Measurement a owl:Class .
+mekg:DistributionMeasurement a owl:Class ; rdfs:subClassOf mekg:Measurement .
+mekg:Property a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:Effect a owl:Class .
+mekg:EfficiencyMetric a owl:Class ; rdfs:subClassOf mekg:Measurement .
+mekg:EconomicMetric a owl:Class ; rdfs:subClassOf mekg:Measurement .
+mekg:EnvironmentalMetric a owl:Class ; rdfs:subClassOf mekg:Measurement .
+
+# Claim, quality and analytics layers
+mekg:Claim a owl:Class .
+mekg:Conclusion a owl:Class ; rdfs:subClassOf mekg:Claim .
+mekg:Recommendation a owl:Class ; rdfs:subClassOf mekg:Claim .
+mekg:Limitation a owl:Class ; rdfs:subClassOf mekg:Claim .
+mekg:Assumption a owl:Class ; rdfs:subClassOf mekg:Claim .
+mekg:Decision a owl:Class ; rdfs:subClassOf mekg:Claim .
+mekg:Hypothesis a owl:Class ; rdfs:subClassOf mekg:Claim .
+mekg:EvidencePack a owl:Class .
+mekg:ValidationRecord a owl:Class .
+mekg:ClaimVersion a owl:Class .
+mekg:RelationshipAssertion a owl:Class .
+mekg:ExtractionCandidate a owl:Class .
+mekg:Contradiction a owl:Class .
+mekg:Consensus a owl:Class .
+mekg:KnowledgeGap a owl:Class .
+mekg:ResearchDirection a owl:Class .
+mekg:Risk a owl:Class .
+mekg:SimilarCase a owl:Class .
+mekg:ApplicabilityAssessment a owl:Class .
+mekg:Problem a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:GraphPattern a owl:Class .
+mekg:ClaimGroup a owl:Class .
+mekg:ConditionDifference a owl:Class .
+
+# People, organisations, geography and terminology
+mekg:Expert a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:Author a owl:Class ; rdfs:subClassOf mekg:Expert .
+mekg:Team a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:Lab a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:Organization a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:Project a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:GeoRegion a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:Country a owl:Class ; rdfs:subClassOf mekg:GeoRegion .
+mekg:Site a owl:Class ; rdfs:subClassOf mekg:GeoRegion .
+mekg:GeoScope a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:TopicTag a owl:Class ; rdfs:subClassOf mekg:CanonicalEntity .
+mekg:Term a owl:Class ; rdfs:subClassOf skos:Concept .
+mekg:Alias a owl:Class ; rdfs:subClassOf skos:Concept .
+mekg:ExpertiseScore a owl:Class .
+
+# Object properties used by the Neo4j projection.
+mekg:HAS_VERSION a owl:ObjectProperty .
+mekg:HAS_PAGE a owl:ObjectProperty .
+mekg:HAS_PUBLICATION a owl:ObjectProperty .
+mekg:HAS_CHUNK a owl:ObjectProperty .
+mekg:HAS_TABLE a owl:ObjectProperty .
+mekg:HAS_ROW a owl:ObjectProperty .
+mekg:HAS_FIGURE a owl:ObjectProperty .
+mekg:HAS_FORMULA a owl:ObjectProperty .
+mekg:MENTIONS a owl:ObjectProperty .
+mekg:EVIDENCED_BY a owl:ObjectProperty .
+mekg:HAS_EVIDENCE a owl:ObjectProperty .
+mekg:HAS_COMPONENT a owl:ObjectProperty .
+mekg:HAS_PHASE a owl:ObjectProperty .
+mekg:CONTAINS a owl:ObjectProperty .
+mekg:HAS_CONTAMINANT a owl:ObjectProperty .
+mekg:HAS_STEP a owl:ObjectProperty .
+mekg:USES_MATERIAL a owl:ObjectProperty .
+mekg:PRODUCES a owl:ObjectProperty .
+mekg:USES_EQUIPMENT a owl:ObjectProperty .
+mekg:OPERATES_AT a owl:ObjectProperty .
+mekg:HAS_REGIME a owl:ObjectProperty .
+mekg:APPLIES_TO a owl:ObjectProperty .
+mekg:SOLVES a owl:ObjectProperty .
+mekg:STUDIES_PROCESS a owl:ObjectProperty .
+mekg:USES_FEED a owl:ObjectProperty .
+mekg:RUN_ON a owl:ObjectProperty .
+mekg:HAS_CONDITION a owl:ObjectProperty .
+mekg:PRODUCED_MEASUREMENT a owl:ObjectProperty .
+mekg:PRODUCED_EFFECT a owl:ObjectProperty .
+mekg:PERFORMED_BY a owl:ObjectProperty .
+mekg:DESCRIBED_IN a owl:ObjectProperty .
+mekg:MEASURES_PROPERTY a owl:ObjectProperty .
+mekg:HAS_PARAMETER a owl:ObjectProperty .
+mekg:HAS_UNIT a owl:ObjectProperty .
+mekg:HAS_METHOD a owl:ObjectProperty .
+mekg:HAS_SAMPLE a owl:ObjectProperty .
+mekg:SUPPORTS a owl:ObjectProperty .
+mekg:SUPPORTED_BY a owl:ObjectProperty .
+mekg:CONTRADICTS a owl:ObjectProperty .
+mekg:GENERALIZES a owl:ObjectProperty .
+mekg:HAS_LIMITATION a owl:ObjectProperty .
+mekg:BASED_ON a owl:ObjectProperty .
+mekg:SUPERSEDED_BY a owl:ObjectProperty .
+mekg:SUPERSEDES a owl:ObjectProperty .
+mekg:VALIDATED_BY a owl:ObjectProperty .
+mekg:AUTHOR_OF a owl:ObjectProperty .
+mekg:MEMBER_OF a owl:ObjectProperty .
+mekg:PART_OF a owl:ObjectProperty .
+mekg:EXPERT_IN a owl:ObjectProperty .
+mekg:WORKED_ON a owl:ObjectProperty .
+mekg:LOCATED_IN a owl:ObjectProperty .
+mekg:APPLIED_IN a owl:ObjectProperty .
+mekg:HAS_GEO_SCOPE a owl:ObjectProperty .
+mekg:DESCRIBES_PRACTICE_IN a owl:ObjectProperty .
+mekg:MISSING_FOR a owl:ObjectProperty .
+mekg:MISSING_PROCESS a owl:ObjectProperty .
+mekg:MISSING_PROPERTY a owl:ObjectProperty .
+mekg:MISSING_CONDITION a owl:ObjectProperty .
+mekg:MISSING_GEO_REGION a owl:ObjectProperty .
+mekg:DERIVED_FROM a owl:ObjectProperty .
+mekg:INVOLVES a owl:ObjectProperty .
+mekg:EXPLAINED_BY a owl:ObjectProperty .
+mekg:SUMMARIZES a owl:ObjectProperty .
+mekg:HAS_TERM a owl:ObjectProperty .
+mekg:HAS_ALIAS a owl:ObjectProperty .
+mekg:HAS_DIMENSION a owl:ObjectProperty .
+mekg:CONVERTS_TO a owl:ObjectProperty .
+mekg:FROM_PHASE a owl:ObjectProperty .
+mekg:TO_PHASE a owl:ObjectProperty .
+mekg:FOR_ELEMENT a owl:ObjectProperty .
+mekg:HAS_DISTRIBUTION_RESULT a owl:ObjectProperty .
+mekg:MEASURES_DISTRIBUTION_OF a owl:ObjectProperty .
+mekg:HAS_INPUT_CONDITION a owl:ObjectProperty .
+mekg:HAS_OUTPUT_TARGET a owl:ObjectProperty .
+mekg:HAS_PERFORMANCE a owl:ObjectProperty .
+mekg:HAS_ECONOMIC_METRIC a owl:ObjectProperty .
+mekg:VALIDATED_BY_CASE a owl:ObjectProperty .
+
+# Core data properties.
+mekg:id a owl:DatatypeProperty ; rdfs:range xsd:string .
+mekg:canonical_name a owl:DatatypeProperty ; rdfs:range xsd:string .
+mekg:source_text a owl:DatatypeProperty ; rdfs:range xsd:string .
+mekg:numeric_value a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+mekg:value_min a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+mekg:value_max a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+mekg:comparator a owl:DatatypeProperty ; rdfs:range xsd:string .
+mekg:confidence a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+mekg:validation_status a owl:DatatypeProperty ; rdfs:range xsd:string .
+mekg:created_at a owl:DatatypeProperty ; rdfs:range xsd:dateTime .
+mekg:updated_at a owl:DatatypeProperty ; rdfs:range xsd:dateTime .

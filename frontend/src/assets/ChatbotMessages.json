@@ -1,0 +1,15 @@
+{
+  "listMessages": [
+    {
+      "id": 2,
+      "modes":{
+        "agentic_rag":{
+          "message": "Добро пожаловать в исследовательский чат MEKG. Задайте технический вопрос — агент соберёт evidence из Postgres/Neo4j, покажет источники, пробелы, противоречия и уверенность ответа."
+        }
+      },
+      "user": "chatbot",
+      "datetime": "01/01/2024 00:00:00",
+      "currentMode":"agentic_rag"
+    }
+  ]
+}

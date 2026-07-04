@@ -1,0 +1,27 @@
+@prefix mekg: <https://nornickel.example/mekg/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+mekg:MetallurgicalTerms a skos:ConceptScheme ;
+  skos:prefLabel "MEKG multilingual terminology"@en .
+
+mekg:electrowinning a skos:Concept ; skos:inScheme mekg:MetallurgicalTerms ;
+  skos:prefLabel "electrowinning"@en ;
+  skos:prefLabel "электроэкстракция"@ru ;
+  skos:altLabel "electroextraction"@en, "ЭЭ"@ru .
+
+mekg:flash_smelting a skos:Concept ; skos:inScheme mekg:MetallurgicalTerms ;
+  skos:prefLabel "flash smelting"@en ;
+  skos:prefLabel "взвешенная плавка"@ru ;
+  skos:altLabel "ПВП"@ru, "печь взвешенной плавки"@ru .
+
+mekg:heap_leaching a skos:Concept ; skos:inScheme mekg:MetallurgicalTerms ;
+  skos:prefLabel "heap leaching"@en ; skos:prefLabel "кучное выщелачивание"@ru .
+
+mekg:platinum_group_metals a skos:Concept ; skos:inScheme mekg:MetallurgicalTerms ;
+  skos:prefLabel "platinum-group metals"@en ; skos:prefLabel "металлы платиновой группы"@ru ;
+  skos:altLabel "PGM"@en, "МПГ"@ru .
+
+mekg:DomesticPractice a mekg:GeoScope ; skos:prefLabel "domestic practice"@en, "отечественная практика"@ru .
+mekg:ForeignPractice a mekg:GeoScope ; skos:prefLabel "foreign practice"@en, "зарубежная практика"@ru .
+mekg:GlobalPractice a mekg:GeoScope ; skos:prefLabel "global practice"@en, "мировая практика"@ru .
+mekg:UnknownPractice a mekg:GeoScope ; skos:prefLabel "unknown geography"@en .

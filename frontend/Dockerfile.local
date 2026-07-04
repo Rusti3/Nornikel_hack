@@ -1,0 +1,40 @@
+FROM node:20 AS build
+
+ARG VITE_BACKEND_API_URL="http://localhost:8000"
+ARG VITE_REACT_APP_SOURCES="local,wiki,web"
+ARG VITE_LLM_MODELS="yandex_aliceai"
+ARG VITE_LLM_MODELS_PROD="yandex_aliceai"
+ARG VITE_CHAT_MODES="agentic_rag,vector,graph,graph_vector,fulltext,graph_vector_fulltext"
+ARG VITE_ENV="DEV"
+ARG VITE_SKIP_AUTH="true"
+ARG VITE_CHUNK_OVERLAP=20
+ARG VITE_TOKENS_PER_CHUNK=200
+ARG VITE_CHUNK_TO_COMBINE=1
+ARG VITE_EXTRACTION_PROFILE="mekg"
+
+WORKDIR /app
+COPY package.json yarn.lock ./
+RUN corepack enable \
+    && corepack prepare yarn@1.22.22 --activate \
+    && yarn install --frozen-lockfile --ignore-scripts --network-timeout 600000
+COPY . ./
+RUN VITE_BACKEND_API_URL=$VITE_BACKEND_API_URL \
+    VITE_REACT_APP_SOURCES=$VITE_REACT_APP_SOURCES \
+    VITE_LLM_MODELS=$VITE_LLM_MODELS \
+    VITE_LLM_MODELS_PROD=$VITE_LLM_MODELS_PROD \
+    VITE_CHAT_MODES=$VITE_CHAT_MODES \
+    VITE_ENV=$VITE_ENV \
+    VITE_SKIP_AUTH=$VITE_SKIP_AUTH \
+    VITE_CHUNK_OVERLAP=$VITE_CHUNK_OVERLAP \
+    VITE_TOKENS_PER_CHUNK=$VITE_TOKENS_PER_CHUNK \
+    VITE_CHUNK_TO_COMBINE=$VITE_CHUNK_TO_COMBINE \
+    VITE_EXTRACTION_PROFILE=$VITE_EXTRACTION_PROFILE \
+    yarn build
+
+FROM nginx:alpine
+ARG DEPLOYMENT_ENV="local"
+ENV DEPLOYMENT_ENV=$DEPLOYMENT_ENV
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY /nginx/nginx.${DEPLOYMENT_ENV}.conf /etc/nginx/templates/nginx.conf.template
+EXPOSE 8080
+CMD ["nginx", "-g", "daemon off;"]

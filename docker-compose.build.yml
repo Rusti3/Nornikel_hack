@@ -1,0 +1,13 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.local
+  agent-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.local
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.local
