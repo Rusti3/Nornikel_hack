@@ -28,7 +28,10 @@ foreach ($seed in @('demo-seed/search-db.pgdump', 'demo-seed/neo4j.dump')) {
     }
 }
 
-docker info *> $null
+& cmd /c "docker info >NUL 2>NUL"
+if ($LASTEXITCODE -ne 0) {
+    throw 'Docker Desktop is not running or is not available. Start Docker Desktop and run .\start.ps1 again.'
+}
 docker compose config --quiet
 
 if ($Build) {
