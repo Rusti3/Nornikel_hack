@@ -40,33 +40,33 @@ git lfs version
 git clone https://github.com/Rusti3/Nornikel_hack.git
 cd Nornikel_hack
 git lfs pull
+.\start.ps1
+```
 
-Copy-Item .env.example .env
+При первом запуске `start.ps1` сам создаёт `.env` из готового `.env.example`.
+Folder ID, URI моделей и локальные demo-пароли уже заполнены; любые значения
+можно изменить в `.env`. Без облачного ключа доступны готовый граф, BM25 и
+детерминированный fallback по seed-данным.
+
+Чтобы включить Alice AI, embeddings для новых файлов и Web Search, добавьте
+собственный ключ (он опционален для запуска):
+
+```powershell
 notepad .env
 ```
 
-В `.env` заполните минимум:
-
 ```dotenv
 YANDEX_API_KEY=<ваш ключ Yandex AI Studio>
-YANDEX_FOLDER_ID=<ваш Folder ID>
-LLM_MODEL=gpt://<ваш Folder ID>/aliceai-llm/latest
-EMBED_DOC_MODEL=emb://<ваш Folder ID>/text-embeddings-v2-doc/latest
-EMBED_QUERY_MODEL=emb://<ваш Folder ID>/text-embeddings-v2-query/latest
-NEO4J_PASSWORD=<любой надежный пароль>
-POSTGRES_PASSWORD=<любой надежный пароль>
 ```
+
+Публичные пароли в `.env.example` предназначены только для локального демо.
+Перед внешним развёртыванием замените `NEO4J_PASSWORD` и `POSTGRES_PASSWORD`.
 
 Через Git LFS загружаются готовые seed-дампы Postgres и Neo4j, а также две
 демонстрационные презентации для Q01 и Q04. Полный 4,86-ГБ корпус не нужен для
 демо и в репозиторий не входит.
 
-Загрузка готовых Docker-образов и запуск:
-
-```powershell
-docker compose pull
-.\start.ps1
-```
+Скрипт сам загрузит готовые Docker-образы и поднимет стек.
 
 При первом запуске пустые Docker volumes автоматически наполняются готовыми
 данными: Postgres/ParadeDB восстанавливает chunks, BM25 и embeddings, Neo4j —

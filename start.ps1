@@ -6,7 +6,8 @@ $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
 if (-not (Test-Path -LiteralPath '.env')) {
-    throw 'Missing .env. Copy .env.example to .env and fill in the local secrets.'
+    Copy-Item -LiteralPath '.env.example' -Destination '.env'
+    Write-Host 'Created .env with demo defaults. Add YANDEX_API_KEY later for full AI/Web mode.'
 }
 
 foreach ($seed in @('demo-seed/search-db.pgdump', 'demo-seed/neo4j.dump')) {
