@@ -286,6 +286,69 @@ def test_analysis_normalizes_model_specific_numeric_slots_to_controlled_vocabula
     assert all("Co" not in slot for slot in normalized.required_slots)
 
 
+def test_fallback_analysis_detects_numeric_economic_comparison() -> None:
+    parsed = AgenticRAG._fallback_analysis(
+        "Выполни технико-экономическое сравнение вариантов обессоливания: "
+        "целевое содержание солей 200–300 мг/л."
+    )
+
+    assert parsed.intent == "technology_review"
+    assert parsed.requires_numeric_answer is True
+    assert "economic_metrics" in parsed.required_slots
+    assert "basis_for_optimality" in parsed.required_slots
+
+    normalized = AgenticRAG._normalize_analysis(
+        ParsedAgentQuery(required_slots=["source"]),
+        "Выполни технико-экономическое сравнение вариантов обессоливания: "
+        "целевое содержание солей 200–300 мг/л.",
+    )
+    assert "economic_metrics" in normalized.required_slots
+    assert "basis_for_optimality" in normalized.required_slots
+
+
+def test_desalination_direct_guard_rejects_unrelated_economic_evidence() -> None:
+    plan = RetrievalPlan(iteration=1, strategy="broad", goal="search", queries=["q"])
+    question = "Технико-экономическое сравнение вариантов обессоливания воды"
+
+    assert AgenticRAG._is_direct(
+        question,
+        "Обратный осмос обеспечивает обессоливание исходной воды с образованием концентрата.",
+        plan,
+    )
+    assert not AgenticRAG._is_direct(
+        question,
+        "Экономическая эффективность выпуска руды зависит от капитальных затрат.",
+        plan,
+    )
+
+
+def test_economic_hard_gate_requires_both_capex_and_opex_evidence() -> None:
+    rag = AgenticRAG.__new__(AgenticRAG)
+    state = AgentState(
+        query_id="q-economic",
+        original_query="Сравни варианты по CAPEX и OPEX",
+        parsed_query=ParsedAgentQuery(
+            required_slots=["economic_metrics", "source"],
+            constraints=QueryConstraints(),
+        ),
+        llm_available=False,
+        evidence_pack=AgentEvidencePack(
+            items=[AgentEvidenceItem(
+                id="e1", source_id="d1", source_type="local_chunk",
+                snippet="Капитальные затраты на мембранную установку высокие.",
+                supports_slots=["economic_metrics"], direct=True,
+            )],
+            covered_slots=["economic_metrics", "source"],
+        ),
+    )
+
+    verdict = rag._judge(state, "draft", final_iteration=True)
+
+    assert verdict.action != "answer_full"
+    assert verdict.hard_gates["economic_metrics"] is False
+    assert "economic_metrics" in verdict.missing_slots
+
+
 def test_direct_guard_requires_unique_process_name_and_chemical_symbols():
     plan = RetrievalPlan(iteration=1, strategy="broad", goal="search", queries=["q"])
     query = "Какие извлечения Co, Ni, Cu и Mn заявлены для процесса Cuprion?"

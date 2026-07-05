@@ -282,6 +282,11 @@ export type AgenticChatDetails = {
   coverage_hint?: Record<string, any>;
   graph_candidates?: string[];
   diagnostics?: Record<string, any>;
+  graph_context?: {
+    query?: string;
+    document_ids?: string[];
+  };
+  preview?: Record<string, any>[];
 };
 export interface Messages {
   id: number;

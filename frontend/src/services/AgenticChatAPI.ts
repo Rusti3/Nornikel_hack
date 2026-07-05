@@ -17,6 +17,9 @@ const agentEventTypes = [
   'cancelled',
   'retry_scheduled',
   'cancel_requested',
+  'retrieval_preview',
+  'retrieval_preview_unavailable',
+  'cache_hit',
 ];
 
 export type AgenticChatOptions = {
@@ -27,6 +30,7 @@ export type AgenticChatOptions = {
   yearMin?: number;
   yearMax?: number;
   numericMode?: 'boost' | 'strict';
+  focusDocumentIds?: string[];
   onUpdate?: (response: ResponseMode) => void;
 };
 
@@ -82,6 +86,7 @@ const extractGraphCandidates = (result?: Record<string, any>) => {
 
 const toResponseMode = (job: AgenticJob, trace: AgenticTraceEvent[], startedAt: number): ResponseMode => {
   const result = job.result ?? {};
+  const previewEvent = [...trace].reverse().find((event) => event.type === 'retrieval_preview');
   const details: AgenticChatDetails = {
     job_id: job.job_id,
     status: job.status,
@@ -99,6 +104,8 @@ const toResponseMode = (job: AgenticJob, trace: AgenticTraceEvent[], startedAt: 
       llm_available: result.state?.llm_available,
       web_calls: result.state?.web_calls,
     },
+    graph_context: result.graph_context,
+    preview: previewEvent?.payload?.results ?? [],
   };
   const responseTime = Date.now() - startedAt;
   const isTerminal = terminalStatuses.has(job.status);
@@ -138,6 +145,7 @@ export const agenticChatAPI = async (question: string, options: AgenticChatOptio
     filters,
     max_iterations: 3,
     include_debug: true,
+    focus_document_ids: options.focusDocumentIds ?? [],
   });
   const jobId = accepted.data.job_id;
   let trace: AgenticTraceEvent[] = [];

@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
+import re
 import shutil
 import threading
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from sse_starlette.sse import EventSourceResponse
 
 from .config import MEKGConfig
@@ -27,7 +29,11 @@ from .models import (
     SemanticSearchRequest,
     ReviewDecision,
     WebSearchRequest,
+    GraphPathwaysRequest,
 )
+from .graph_pathways import build_pathways
+from .reports import build_markdown_report, build_pdf_report
+from .retrieval import CrossCorpusRetriever
 from .service import MEKGService
 from .parsers import DocumentParser
 from .search_store import CORPORA, SearchStore
@@ -199,18 +205,256 @@ def _public_agent_run(row: dict) -> dict:
     }
 
 
+def _preview_agent_job(job_id: str, request: AgenticRAGRequest) -> None:
+    """Best-effort deterministic preview; never delays job acceptance."""
+    store = SearchStore(MEKGConfig.from_env())
+    try:
+        filters = request.filters.model_copy(deep=True)
+        if request.focus_document_ids:
+            filters.document_ids = request.focus_document_ids
+        preview = CrossCorpusRetriever(store=store).search(CrossCorpusSearchRequest(
+            query=request.query,
+            intent="research",
+            corpora=request.corpora,
+            filters=filters,
+            max_corpora=5,
+            k_per_corpus=4,
+            final_k=8,
+            include_debug=False,
+            allow_remote=False,
+        ))
+        rows = (preview.data or {}).get("results") or []
+        store.append_agent_event(job_id, "retrieval_preview", {
+            "results": [{
+                "document_id": row.get("document_id"),
+                "file_name": row.get("file_name"),
+                "page": row.get("page_number"),
+                "slide": row.get("slide_number"),
+                "snippet": str(row.get("text") or "")[:360],
+                "score": row.get("score"),
+            } for row in rows[:8]],
+            "warnings": preview.warnings,
+        })
+    except Exception as exc:
+        try:
+            store.append_agent_event(job_id, "retrieval_preview_unavailable", {
+                "error_type": type(exc).__name__,
+            })
+        except Exception:
+            pass
+    finally:
+        store.close()
+
+
 @router.post("/agentic_rag/jobs", response_model=AgentJobAccepted, status_code=202)
 def start_agentic_rag(request: AgenticRAGRequest):
     store = SearchStore(MEKGConfig.from_env())
     try:
         store.initialize_schema()
         job_id = store.create_agent_run(request.model_dump(mode="json"), run_type="agentic_rag")
+        threading.Thread(
+            target=_preview_agent_job, args=(job_id, request), daemon=True,
+            name=f"preview-{job_id[:8]}",
+        ).start()
         return AgentJobAccepted(
             job_id=job_id,
             status="queued",
             events_url=f"/api/mekg/v1/agentic_rag/jobs/{job_id}/events",
             status_url=f"/api/mekg/v1/agentic_rag/jobs/{job_id}",
         )
+    finally:
+        store.close()
+
+
+def _safe_upload_name(value: str) -> str:
+    name = Path(value or "document").name.strip()
+    if any(marker in name for marker in ("Ð", "Ñ", "Р", "С")):
+        try:
+            repaired = name.encode("latin-1").decode("utf-8")
+            if repaired and repaired != name:
+                name = repaired
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass
+    name = re.sub(r"[^\w.()\- А-Яа-яЁё]", "_", name, flags=re.UNICODE)
+    return name[:160] or "document"
+
+
+@router.post("/ingest/jobs", response_model=AgentJobAccepted, status_code=202)
+async def start_ingest_job(
+    files: list[UploadFile] = File(...),
+    category: str = Form("auto"),
+    question: str | None = Form(None),
+    allow_external_web: bool = Form(False),
+):
+    if not files or len(files) > 10:
+        raise HTTPException(status_code=400, detail="Upload between 1 and 10 files")
+    config = MEKGConfig.from_env()
+    max_bytes = max(1, int(os.getenv("MEKG_UPLOAD_MAX_BYTES", str(100 * 1024 * 1024))))
+    incoming = config.artifacts_dir / "uploads" / "incoming"
+    sources = config.artifacts_dir / "uploads" / "sources"
+    incoming.mkdir(parents=True, exist_ok=True)
+    sources.mkdir(parents=True, exist_ok=True)
+    saved: list[dict[str, object]] = []
+    temporary_paths: list[Path] = []
+    try:
+        for upload in files:
+            original = _safe_upload_name(upload.filename or "document")
+            suffix = Path(original).suffix.casefold()
+            if suffix not in DocumentParser.SUPPORTED:
+                raise HTTPException(status_code=400, detail=f"Unsupported file format: {suffix or 'none'}")
+            temporary = incoming / f"{uuid.uuid4()}.part"
+            temporary_paths.append(temporary)
+            digest = hashlib.sha256()
+            size = 0
+            with temporary.open("wb") as destination:
+                while True:
+                    chunk = await upload.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > max_bytes:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"{original} exceeds the {max_bytes // (1024 * 1024)} MB limit",
+                        )
+                    digest.update(chunk)
+                    destination.write(chunk)
+            if size == 0:
+                raise HTTPException(status_code=400, detail=f"{original} is empty")
+            sha = digest.hexdigest()
+            target_dir = sources / sha
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target = target_dir / original
+            if target.exists():
+                temporary.unlink(missing_ok=True)
+            else:
+                temporary.replace(target)
+            saved.append({
+                "file_name": original,
+                "path": str(target),
+                "sha256": sha,
+                "size_bytes": size,
+                "content_type": upload.content_type,
+                "category": category,
+            })
+        store = SearchStore(config)
+        try:
+            store.initialize_schema()
+            job_id = store.create_agent_run({
+                "files": saved,
+                "category": category,
+                "question": (question or "").strip() or None,
+                "allow_external_web": allow_external_web,
+                "web_profile_ids": [],
+            }, run_type="document_ingest")
+        finally:
+            store.close()
+        return AgentJobAccepted(
+            job_id=job_id,
+            status="queued",
+            events_url=f"/api/mekg/v1/ingest/jobs/{job_id}/events",
+            status_url=f"/api/mekg/v1/ingest/jobs/{job_id}",
+        )
+    except Exception:
+        for path in temporary_paths:
+            path.unlink(missing_ok=True)
+        raise
+
+
+@router.get("/ingest/jobs")
+def list_ingest_jobs(limit: int = 50):
+    store = SearchStore(MEKGConfig.from_env())
+    try:
+        return {"items": [
+            _public_agent_run(row)
+            for row in store.list_agent_runs(run_type="document_ingest", limit=limit)
+        ]}
+    finally:
+        store.close()
+
+
+@router.get("/ingest/jobs/{job_id}")
+def get_ingest_job(job_id: uuid.UUID):
+    store = SearchStore(MEKGConfig.from_env())
+    try:
+        row = store.get_agent_run(str(job_id))
+        if row["run_type"] != "document_ingest":
+            raise KeyError(job_id)
+        return _public_agent_run(row)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    finally:
+        store.close()
+
+
+@router.post("/ingest/jobs/{job_id}/cancel")
+def cancel_ingest_job(job_id: uuid.UUID):
+    store = SearchStore(MEKGConfig.from_env())
+    try:
+        row = store.get_agent_run(str(job_id))
+        if row["run_type"] != "document_ingest":
+            raise KeyError(job_id)
+        value = store.request_agent_cancel(str(job_id))
+        store.append_agent_event(str(job_id), "cancel_requested", {"status": value["status"]})
+        return {"job_id": str(job_id), **value}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    finally:
+        store.close()
+
+
+@router.get("/ingest/jobs/{job_id}/events")
+async def ingest_job_events(job_id: uuid.UUID, request: Request, after: int = 0):
+    return await agentic_rag_events(job_id, request, after)
+
+
+@router.post("/graph/pathways")
+def graph_pathways(request: GraphPathwaysRequest):
+    if request.agent_job_id:
+        store = SearchStore(MEKGConfig.from_env())
+        try:
+            row = store.get_agent_run(request.agent_job_id)
+            result = row.get("result_json") or {}
+            context = result.get("graph_context") or {}
+            request.document_ids = list(dict.fromkeys([
+                *request.document_ids,
+                *(context.get("document_ids") or []),
+            ]))[:100]
+            request.query = request.query or context.get("query") or (row.get("request_json") or {}).get("query")
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        finally:
+            store.close()
+    return build_pathways(get_service().repository, request)
+
+
+@router.get("/agentic_rag/jobs/{job_id}/export")
+def export_agentic_report(job_id: uuid.UUID, format: str = "markdown"):
+    normalized = format.casefold()
+    if normalized not in {"markdown", "md", "pdf"}:
+        raise HTTPException(status_code=400, detail="format must be markdown or pdf")
+    store = SearchStore(MEKGConfig.from_env())
+    try:
+        row = store.get_agent_run(str(job_id))
+        if row["run_type"] != "agentic_rag":
+            raise KeyError(job_id)
+        if normalized == "pdf":
+            payload = build_pdf_report(row)
+            return Response(
+                payload,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="agentic-{job_id}.pdf"'},
+            )
+        payload = build_markdown_report(row)
+        return Response(
+            payload.encode("utf-8"),
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="agentic-{job_id}.md"'},
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     finally:
         store.close()
 

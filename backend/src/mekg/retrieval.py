@@ -175,6 +175,19 @@ class CrossCorpusRetriever:
         )
 
     def _route(self, request: CrossCorpusSearchRequest) -> tuple[SearchRouting, str | None]:
+        if request.filters.document_ids and not request.corpora:
+            return SearchRouting(
+                routes=[
+                    CorpusRoute(
+                        corpus_id=corpus_id,
+                        reason="attached-document focus",
+                        confidence=1.0,
+                        rewrites=[request.query],
+                    )
+                    for corpus_id in CORPUS_CARDS
+                ],
+                target_slots=request.target_slots,
+            ), None
         if request.corpora:
             valid = [item for item in request.corpora if item in CORPUS_CARDS][: request.max_corpora]
             return SearchRouting(routes=[CorpusRoute(corpus_id=item, reason="explicit", confidence=1, rewrites=[request.query]) for item in valid], target_slots=request.target_slots), None

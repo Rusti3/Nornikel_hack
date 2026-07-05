@@ -179,8 +179,13 @@ class AgenticRAG:
             ])
             return result if isinstance(result, schema) else schema.model_validate(result)
         except Exception as exc:
-            state.llm_available = False
-            warning = f"Agent LLM circuit breaker: {type(exc).__name__}"
+            error_name = type(exc).__name__
+            # A schema response that reaches the provider output limit is local to this
+            # step. Falling back to deterministic analysis is safe; disabling synthesis
+            # for the whole run would turn a recoverable analyzer miss into a poor answer.
+            if error_name not in {"LengthFinishReasonError", "ValidationError"}:
+                state.llm_available = False
+            warning = f"Agent LLM structured fallback: {error_name}"
             if warning not in state.warnings:
                 state.warnings.append(warning)
             return None
@@ -204,6 +209,7 @@ class AgenticRAG:
             "experiment", "material", "process", "result", "numeric_value_or_range", "unit",
             "material_or_system", "basis_for_optimality", "geography", "practice_type", "year",
             "target_combination", "searched_entities", "missing_slots", "nearest_evidence",
+            "economic_metrics",
         }
         fallback = cls._fallback_analysis(query)
         required = [slot for slot in parsed.required_slots if slot in allowed]
@@ -227,8 +233,9 @@ class AgenticRAG:
             required.extend(["geography", "practice_type"])
         if parsed.requires_time_filter:
             required.append("year")
-        if not required:
-            required.extend(fallback.required_slots)
+        # Deterministic requirements are safety floors: a model may add slots but
+        # cannot silently drop numeric, economic, geography, time or source gates.
+        required.extend(fallback.required_slots)
         required.append("source")
         parsed.required_slots = list(dict.fromkeys(required))
         parsed.optional_slots = [slot for slot in parsed.optional_slots if slot in allowed]
@@ -241,6 +248,13 @@ class AgenticRAG:
             "скорост", "температур", "концентрац", "давлен", "расход", "оптим", "диапазон",
             "извлеч", "выход", "содержан", "%",
             "velocity", "temperature", "concentration", "pressure", "flow rate", "optimal", "range",
+        )) or any(fact.get("unit") for fact in AgenticRAG._numeric_facts(query))
+        comparison = any(word in folded for word in (
+            "сравнен", "сопостав", "вариант", " versus ", " vs ", "compare", "comparison",
+        ))
+        economic = any(word in folded for word in (
+            "технико-эконом", "экономик", "стоимост", "затрат", "capex", "opex",
+            "capital cost", "operating cost",
         ))
         geography = any(word in folded for word in (
             "рф", "росси", "зарубеж", "миров", "world", "foreign", "international", "domestic",
@@ -253,7 +267,10 @@ class AgenticRAG:
             intent, answer_type = "experiments", "experiment_list"
         elif any(word in folded for word in ("эксперт", "автор", "expert")):
             intent, answer_type = "experts", "review"
-        elif any(word in folded for word in ("метод", "технолог", "решени", "method", "technology")):
+        elif any(word in folded for word in (
+            "метод", "технолог", "решени", "обзор", "очистк", "обессоливан", "подготовк",
+            "переработк", "утилизац", "method", "technology", "review", "treatment",
+        )):
             intent, answer_type = "technology_review", "table"
         else:
             intent, answer_type = "research", "review"
@@ -268,6 +285,10 @@ class AgenticRAG:
             required.extend(["numeric_value_or_range", "unit", "process", "material_or_system"])
             if "оптим" in folded or "optimal" in folded:
                 required.append("basis_for_optimality")
+        if economic:
+            required.append("economic_metrics")
+        if economic and comparison:
+            required.append("basis_for_optimality")
         if geography or world_scope:
             required.extend(["geography", "practice_type"])
         if time_filter:
@@ -401,13 +422,17 @@ class AgenticRAG:
         outputs: dict[str, Any] = {"vector": None, "graph": [], "web": None}
         futures = {}
         with ThreadPoolExecutor(max_workers=3) as pool:
+            filters = request.filters.model_copy(deep=True)
+            if request.focus_document_ids:
+                filters.document_ids = list(dict.fromkeys(request.focus_document_ids))[:100]
             search_request = CrossCorpusSearchRequest(
                 query=plan.queries[0],
                 intent=parsed.intent,
                 target_slots=parsed.required_slots,
                 corpora=request.corpora,
-                filters=request.filters,
+                filters=filters,
                 numeric_mode="boost",
+                max_corpora=5 if request.focus_document_ids else 4,
                 final_k=24,
                 include_debug=request.include_debug,
                 allow_remote=state.llm_available,
@@ -669,6 +694,10 @@ class AgenticRAG:
             "process": ("процесс", "экстрак", "выщелач", "process", "electrowinning", "leaching"),
             "result": ("результ", "извлеч", "выход", "result", "recovery", "yield"),
             "basis_for_optimality": ("оптим", "рекоменд", "максим", "массоперенос", "optimal", "recommended", "maximum", "mass transfer"),
+            "economic_metrics": (
+                "capex", "opex", "капитальн", "эксплуатационн", "стоимост", "себестоимост",
+                "затрат", "руб", "доллар", "usd", "eur", "capital cost", "operating cost",
+            ),
             "geography": ("росси", "рф", "зарубеж", "миров", "russia", "foreign", "world"),
             "practice_type": ("промышлен", "лаборатор", "industrial", "laboratory", "pilot"),
             "year": ("202", "201", "199"),
@@ -773,6 +802,17 @@ class AgenticRAG:
             ("process:electrorefining", ("электрорафинир", "electrorefining")),
             ("process:flotation", ("флотац", "flotation")),
             ("process:roasting", ("обжиг", "roasting")),
+            ("topic:mine_water", ("шахтных вод", "шахтные воды", "mine water", "acid mine drainage")),
+            ("topic:desalination", (
+                "обессолив", "desalination", "обратный осмос", "reverse osmosis", "мембранная дистил",
+            )),
+            ("topic:technogenic_gypsum", (
+                "техногенный гипс", "техногенного гипса", "фосфогипс", "phosphogypsum", "synthetic gypsum",
+            )),
+            ("topic:deep_injection", ("глубокие горизонт", "deep well injection", "deep injection")),
+            ("topic:coal_backfill", ("угольн", "coal waste", "coal gangue")),
+            ("topic:sulfur_dioxide", ("so2", "so₂", "диоксид сер", "сернист")),
+            ("topic:lead_zinc", ("свинцово-цинк", "lead-zinc", "lead zinc")),
         )
         required_groups = [
             aliases for _name, aliases in entity_groups if any(alias in original_folded for alias in aliases)
@@ -794,20 +834,6 @@ class AgenticRAG:
         items = state.evidence_pack.items[:20]
         if not items:
             return "Evidence не найдено; ответ невозможен."
-        if state.llm_available:
-            try:
-                context = [
-                    {"source": item.citation_label, "text": item.snippet[:900], "slots": item.supports_slots}
-                    for item in items
-                ]
-                response = self.llm.invoke([
-                    SystemMessage(content="Create a short internal draft only from supplied evidence. Identify missing facts; do not invent."),
-                    HumanMessage(content=json.dumps({"question": state.original_query, "evidence": context}, ensure_ascii=False)),
-                ])
-                return str(response.content)
-            except Exception as exc:
-                state.llm_available = False
-                state.warnings.append(f"Agent LLM circuit breaker: {type(exc).__name__}")
         covered = ", ".join(state.evidence_pack.covered_slots) or "нет"
         missing = ", ".join(state.evidence_pack.missing_slots) or "нет"
         return f"Найдено источников: {len(items)}. Покрыто: {covered}. Не хватает: {missing}."
@@ -823,6 +849,17 @@ class AgenticRAG:
             "basis_for_optimality" in item.supports_slots and any(fact.get("unit") for fact in item.numeric_facts)
             for item in eligible
         )
+        economic_required = "economic_metrics" in parsed.required_slots
+        economic_text = " ".join(
+            item.snippet.casefold() for item in eligible if "economic_metrics" in item.supports_slots
+        )
+        has_capex = any(term in economic_text for term in (
+            "capex", "капитальн", "capital cost", "стоимость оборудован", "инвестиционн",
+        ))
+        has_opex = any(term in economic_text for term in (
+            "opex", "эксплуатационн", "operating cost", "операционн", "себестоимост",
+        ))
+        economic_supported = not economic_required or (has_capex and has_opex)
         geographies = {item.geography for item in eligible if item.geography}
         geography_supported = not parsed.requires_geography_comparison or {"domestic", "foreign"}.issubset(geographies)
         time_supported = not parsed.requires_time_filter or any(item.year for item in eligible)
@@ -832,6 +869,7 @@ class AgenticRAG:
         hard_gates = {
             "numeric_value_and_unit": numeric_supported,
             "basis_for_optimality": optimality_supported,
+            "economic_metrics": economic_supported,
             "geography_comparison": geography_supported,
             "time_filter": time_supported,
             "claim_sources": source_supported,
@@ -842,6 +880,8 @@ class AgenticRAG:
             missing = list(dict.fromkeys([*missing, "numeric_value_or_range", "unit"]))
         if optimality_required and not optimality_supported:
             missing = list(dict.fromkeys([*missing, "basis_for_optimality"]))
+        if economic_required and not economic_supported:
+            missing = list(dict.fromkeys([*missing, "economic_metrics"]))
         if parsed.requires_geography_comparison and not geography_supported:
             missing = list(dict.fromkeys([*missing, "geography"]))
         if parsed.requires_time_filter and not time_supported:
@@ -850,7 +890,7 @@ class AgenticRAG:
         all_slots = not missing
         score = 0
         score += 25 if all_slots else round(25 * (len(covered) / max(1, len(parsed.required_slots))))
-        score += 20 if numeric_supported and optimality_supported else 0
+        score += 20 if numeric_supported and optimality_supported and economic_supported else 0
         score += 15 if source_supported else 0
         score += 15 if len({item.source_id for item in eligible}) >= 2 else 0
         score += 10 if geography_supported and time_supported else 0
@@ -881,6 +921,8 @@ class AgenticRAG:
                 relevant_llm_missing.update({"numeric_value_and_unit", "numeric_value_or_range", "unit"})
             if optimality_required:
                 relevant_llm_missing.update({"basis_for_optimality"})
+            if economic_required:
+                relevant_llm_missing.update({"economic_metrics"})
             if parsed.requires_geography_comparison:
                 relevant_llm_missing.update({"geography_comparison", "geography"})
             if parsed.requires_time_filter:
@@ -953,8 +995,12 @@ class AgenticRAG:
         ]
         if verdict.action == "answer_full" and state.llm_available:
             mode = "full_answer"
-        elif verdict.can_answer_partially or state.evidence_pack.items:
+        elif verdict.can_answer_partially or any(
+            item.direct and not item.metadata_only for item in state.evidence_pack.items
+        ):
             mode = "partial_answer_with_gaps"
+        elif state.evidence_pack.items:
+            mode = "NO_DIRECT_DATA"
         elif (state.parsed_query and state.parsed_query.requires_numeric_answer):
             mode = "NO_NUMERIC_DATA"
         else:
@@ -977,6 +1023,11 @@ class AgenticRAG:
                     SystemMessage(content=(
                         "Answer only from the supplied evidence. Cite every important claim as [S1]. "
                         "Never present analogy or metadata-only records as direct proof. Keep all numeric units. "
+                        "Use only the exact source labels supplied in evidence; never add words inside a citation. "
+                        "Restate numeric, geography and time constraints supplied in the user question in an explicit "
+                        "input-constraints section; these are user inputs and do not need an evidence citation. "
+                        "If an economic_metrics or basis_for_optimality hard gate is false, explicitly report the "
+                        "gap and do not rank, recommend, call a variant optimal, or assign qualitative CAPEX/OPEX. "
                         "Structure: conclusion, comparison table when useful, sources, contradictions, gaps, confidence."
                     )),
                     HumanMessage(content=json.dumps({
@@ -994,10 +1045,53 @@ class AgenticRAG:
                 mode = "partial_answer_with_gaps" if state.evidence_pack.items else mode
         if not answer:
             answer = self._fallback_answer(state, mode)
+        validation_gaps: list[str] = []
+        citation_tokens = set(re.findall(r"\[S[^\]]*\]", answer))
+        valid_labels = {item.citation_label for item in state.evidence_pack.items}
+        invalid_citations = sorted(
+            token for token in citation_tokens if token[1:-1] not in valid_labels
+        )
+        if invalid_citations:
+            answer = re.sub(r"\[S[^\]]*\]", lambda match: (
+                match.group(0) if match.group(0)[1:-1] in valid_labels else "[источник не подтверждён]"
+            ), answer)
+            state.warnings.append("Synthesis contained invalid citation labels; answer was downgraded.")
+            validation_gaps.append("source_attribution")
+            mode = "partial_answer_with_gaps"
+        cited_labels = set(re.findall(r"\[(S\d+)\]", answer))
+        if state.evidence_pack.items and not cited_labels:
+            state.warnings.append("Synthesis contained no verifiable citations; evidence fallback was used.")
+            validation_gaps.append("source_attribution")
+            mode = "partial_answer_with_gaps"
+            answer = self._fallback_answer(state, mode)
+            cited_labels = set(re.findall(r"\[(S\d+)\]", answer))
+
+        parsed = state.parsed_query or self._fallback_analysis(state.original_query)
+        optimum_claimed = bool(re.search(
+            r"(?i)\b(?:оптимальн\w*\s+вариант\w*|предпочтительн\w*\s+вариант\w*|"
+            r"рекомендуется\s+выбрать|best\s+option|optimal\s+option|preferred\s+option)",
+            answer,
+        ))
+        optimum_verified = (
+            "basis_for_optimality" in parsed.required_slots
+            and verdict.hard_gates.get("basis_for_optimality", False)
+        )
+        if optimum_claimed and not optimum_verified:
+            answer = re.sub(r"(?i)\bоптимальный вариант\b", "предварительный кандидат", answer)
+            answer = re.sub(r"(?i)\bпредпочтительный вариант\b", "вариант для пилотной проверки", answer)
+            answer = (
+                "> Основание оптимальности не подтверждено прямыми данными; варианты нельзя ранжировать окончательно.\n\n"
+                + answer
+            )
+            state.warnings.append("Unsupported optimality wording was neutralized.")
+            validation_gaps.append("basis_for_optimality")
+            mode = "partial_answer_with_gaps"
+
+        sources = [source for source in sources if source["label"] in cited_labels]
         confidence = verdict.score / 100
         if mode == "partial_answer_with_gaps":
             confidence = min(confidence, 0.79)
-        elif mode in {"NO_EVIDENCE_FOUND", "NO_NUMERIC_DATA"}:
+        elif mode in {"NO_EVIDENCE_FOUND", "NO_NUMERIC_DATA", "NO_DIRECT_DATA"}:
             confidence = min(confidence, 0.49)
         return {
             "job_id": state.query_id,
@@ -1006,17 +1100,24 @@ class AgenticRAG:
             "answer_markdown": answer,
             "confidence": round(confidence, 3),
             "sources": sources,
-            "gaps": verdict.missing_slots,
+            "gaps": list(dict.fromkeys([*verdict.missing_slots, *validation_gaps])),
             "contradictions": state.evidence_pack.contradictions,
             "warnings": list(dict.fromkeys(state.warnings)),
             "searched_iterations": state.iteration,
             "state": state.model_dump(mode="json") if request.include_debug else None,
+            "graph_context": {
+                "query": request.query,
+                "document_ids": list(dict.fromkeys([
+                    *request.focus_document_ids,
+                    *[item.source_id for item in state.evidence_pack.items if item.source_id.startswith("doc_")],
+                ]))[:100],
+            },
         }
 
     @staticmethod
     def _fallback_answer(state: AgentState, mode: str) -> str:
         verdict = state.sufficiency
-        if mode in {"NO_EVIDENCE_FOUND", "NO_NUMERIC_DATA"}:
+        if mode in {"NO_EVIDENCE_FOUND", "NO_NUMERIC_DATA", "NO_DIRECT_DATA"}:
             nearest = state.evidence_pack.items[:5]
             lines = [
                 "## Результат",
@@ -1046,5 +1147,6 @@ class AgenticRAG:
             lines.append(f"- [{item.citation_label}] ({kind}) {normalized}")
         if verdict.missing_slots:
             lines.extend(["\n## Пробелы", *[f"- {slot}" for slot in verdict.missing_slots]])
-        lines.append(f"\nУверенность: {verdict.score}/100.")
+        shown_score = verdict.score if mode == "full_answer" else min(verdict.score, 79)
+        lines.append(f"\nУверенность: {shown_score}/100.")
         return "\n".join(lines)

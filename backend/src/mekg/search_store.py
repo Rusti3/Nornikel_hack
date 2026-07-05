@@ -39,6 +39,7 @@ STAGES = (
     "second_extraction_skipped",
     "neo4j_committed",
     "complete",
+    "complete_with_warnings",
     "failed",
 )
 
@@ -272,6 +273,30 @@ class SearchStore:
             conn.commit()
         return value
 
+    def ensure_pipeline_run(
+        self, run_id: str, corpus_root: str, *, mode: str = "upload", deadline_hours: float = 24
+    ) -> str:
+        """Create the durable pipeline row backing an upload job, idempotently."""
+        with self.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO pipeline_runs(id,corpus_root,mode,deadline_at,status,settings)
+                VALUES(%s,%s,%s,%s,'running',%s::jsonb)
+                ON CONFLICT(id) DO UPDATE SET status='running',updated_at=now()
+                RETURNING id::text
+                """,
+                (
+                    run_id,
+                    corpus_root,
+                    mode,
+                    utcnow() + timedelta(hours=deadline_hours),
+                    json.dumps({"source": "interactive_upload"}),
+                ),
+            )
+            value = cur.fetchone()["id"]
+            conn.commit()
+            return value
+
     def register_document(self, run_id: str, document: ParsedDocument, source_path: str) -> None:
         corpus_id = corpus_for_category(document.category)
         year_match = re.search(r"(?:19|20)\d{2}", document.source_locator)
@@ -363,6 +388,38 @@ class SearchStore:
                 (vector_literal(vector), model, chunk_id),
             )
             conn.commit()
+
+    def document_chunks_without_embeddings(self, document_id: str) -> list[dict[str, Any]]:
+        with self.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT id,text FROM chunks WHERE document_id=%s AND embedding IS NULL ORDER BY ordinal",
+                (document_id,),
+            )
+            return list(cur.fetchall())
+
+    def document_embedding_counts(self, document_id: str) -> dict[str, int]:
+        with self.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT count(*)::int AS chunks,count(embedding)::int AS embedded FROM chunks WHERE document_id=%s",
+                (document_id,),
+            )
+            return cur.fetchone() or {"chunks": 0, "embedded": 0}
+
+    def find_document_by_sha(self, sha256: str) -> dict[str, Any] | None:
+        with self.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM documents WHERE sha256=%s ORDER BY updated_at DESC LIMIT 1",
+                (sha256,),
+            )
+            return cur.fetchone()
+
+    def corpus_version(self) -> str:
+        with self.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT coalesce(max(updated_at)::text,'empty') AS version,count(*)::text AS count FROM documents"
+            )
+            row = cur.fetchone() or {"version": "empty", "count": "0"}
+            return f"{row['version']}:{row['count']}"
 
     def save_extraction(
         self, run_id: str, document_id: str, *, pass_number: int, element_ids: list[str], payload: dict[str, Any]
@@ -578,6 +635,9 @@ class SearchStore:
 
     @staticmethod
     def _append_filters(clauses: list[str], params: list[Any], filters: dict[str, Any]) -> None:
+        if filters.get("document_ids"):
+            clauses.append("c.document_id=ANY(%s)")
+            params.append(list(dict.fromkeys(filters["document_ids"]))[:100])
         if filters.get("source_type"):
             clauses.append("c.source_type=ANY(%s)")
             params.append(filters["source_type"] if isinstance(filters["source_type"], list) else [filters["source_type"]])
@@ -640,7 +700,14 @@ class SearchStore:
             conn.commit()
             return run_id
 
-    def claim_agent_run(self, owner: str, *, run_type: str | None = None) -> dict[str, Any] | None:
+    def claim_agent_run(
+        self,
+        owner: str,
+        *,
+        run_type: str | None = None,
+        run_types: list[str] | None = None,
+    ) -> dict[str, Any] | None:
+        allowed_types = run_types or ([run_type] if run_type else None)
         with self.connection() as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -648,7 +715,7 @@ class SearchStore:
                     SELECT id FROM agent_runs
                     WHERE status IN ('queued','running') AND cancel_requested=false
                       AND attempts < %s AND (lease_until IS NULL OR lease_until < now())
-                      AND (%s::text IS NULL OR run_type=%s::text)
+                      AND (%s::text[] IS NULL OR run_type=ANY(%s::text[]))
                     ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
                 )
                 UPDATE agent_runs r SET status='running',lease_owner=%s,
@@ -658,7 +725,7 @@ class SearchStore:
                 RETURNING r.*,r.id::text AS run_id
                 """,
                 (
-                    self.config.job_max_attempts, run_type, run_type, owner,
+                    self.config.job_max_attempts, allowed_types, allowed_types, owner,
                     self.config.agent_lease_seconds,
                 ),
             )
@@ -773,6 +840,17 @@ class SearchStore:
             if not row:
                 raise KeyError(f"Agent run not found: {run_id}")
             return row
+
+    def list_agent_runs(self, *, run_type: str, limit: int = 50) -> list[dict[str, Any]]:
+        with self.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT *,id::text AS run_id FROM agent_runs
+                WHERE run_type=%s ORDER BY created_at DESC LIMIT %s
+                """,
+                (run_type, max(1, min(limit, 200))),
+            )
+            return list(cur.fetchall())
 
     def list_agent_events(self, run_id: str, *, after_id: int = 0, limit: int = 500) -> list[dict[str, Any]]:
         with self.connection() as conn, conn.cursor() as cur:

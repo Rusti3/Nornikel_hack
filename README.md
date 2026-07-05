@@ -1,5 +1,23 @@
 # Nornikel Knowledge Graph / Agentic RAG
 
+## Что открывать после запуска
+
+Главный интерфейс доступен на <http://localhost:8080> и состоит из трёх простых вкладок:
+
+- **Чат** — доказательные ответы Agentic RAG по локальному корпусу; Web Search включается только вручную.
+- **Граф** — реальные цепочки `материал → процесс → оборудование → результат`, построенные через узлы `Experiment`. Неполные цепочки показываются с пропущенными звеньями, а не скрываются.
+- **Данные** — drag-and-drop загрузка до 10 файлов по 100 МБ. PDF, DOC/DOCX/DOCM, PPTX и XLS/XLSX автоматически проходят text-only parsing, BM25/Postgres, embeddings, извлечение фактов и одну транзакцию Neo4j.
+
+В чат файл можно перетащить прямо вместе с вопросом. Сначала он индексируется, затем вопрос выполняется с приоритетом приложенного документа. У готового ответа доступны экспорт в Markdown/PDF и переход к связанным цепочкам графа.
+
+Дополнительные адреса:
+
+- API и health: <http://localhost:8000/docs>, <http://localhost:8000/health>
+- Neo4j Browser: <http://localhost:7474>
+- прежний Graph Builder: <http://localhost:8080/builder>
+
+OCR намеренно выключен: для сканированного PDF без текстового слоя интерфейс вернёт понятное предупреждение. Повторная загрузка того же файла определяется по SHA-256 и не создаёт второй документ.
+
 Локальный Docker-стек для демо “Научный клубок”: Neo4j knowledge graph, Postgres/ParadeDB vector+BM25 search, backend Agentic RAG worker и frontend-чат.
 
 ## Что нужно установить
@@ -131,8 +149,18 @@ CORPUS_PATH=C:/path/to/your/documents
 docker compose ps
 docker compose logs -f backend
 docker compose logs -f agent-worker
+docker compose logs -f ingest-worker
 docker compose config --quiet
 ```
+
+Checkpointed прогон десяти экспертных вопросов (без внешнего поиска и с ним):
+
+```powershell
+python backend/scripts/evaluate_expert_questions.py --run-id expert-local
+python backend/scripts/evaluate_expert_questions.py --run-id expert-web --web
+```
+
+Эталоны обязательных слотов находятся в `backend/pilot/expert_questions.json`, результаты — в игнорируемом каталоге `artifacts/expert-eval/`.
 
 Обновление готовых образов:
 

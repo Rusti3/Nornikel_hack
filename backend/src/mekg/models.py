@@ -316,6 +316,7 @@ class SearchFilters(BaseModel):
     geography: str | None = None
     domain: str | None = None
     confidence_min: float | None = Field(default=None, ge=0, le=1)
+    document_ids: list[str] = Field(default_factory=list, max_length=100)
 
 
 class CrossCorpusSearchRequest(BaseModel):
@@ -399,6 +400,16 @@ class AgenticRAGRequest(BaseModel):
     max_iterations: int = Field(default=3, ge=1, le=3)
     answer_language: Literal["ru", "en"] = "ru"
     include_debug: bool = True
+    focus_document_ids: list[str] = Field(default_factory=list, max_length=100)
+
+
+class GraphPathwaysRequest(BaseModel):
+    query: str | None = Field(default=None, max_length=2000)
+    agent_job_id: str | None = None
+    document_ids: list[str] = Field(default_factory=list, max_length=100)
+    entity_ids: list[str] = Field(default_factory=list, max_length=100)
+    limit: int = Field(default=50, ge=1, le=200)
+    include_incomplete: bool = True
 
 
 class QueryConstraints(BaseModel):

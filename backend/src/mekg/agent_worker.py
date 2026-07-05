@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import signal
@@ -34,7 +35,9 @@ class AgentWorker:
         self.store.initialize_schema()
         logger.info("Agent worker started as %s", self.owner)
         while not self.stop_event.is_set():
-            row = self.store.claim_agent_run(self.owner)
+            row = self.store.claim_agent_run(
+                self.owner, run_types=["agentic_rag", "graph_qa"]
+            )
             if not row:
                 self.stop_event.wait(self.config.agent_poll_seconds)
                 continue
@@ -59,6 +62,30 @@ class AgentWorker:
                 )
                 return
             request = AgenticRAGRequest.model_validate(row["request_json"])
+            cache_value = json.dumps(
+                {
+                    "request": request.model_dump(mode="json"),
+                    "corpus_version": self.store.corpus_version(),
+                    "evidence_policy_version": 4,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            cached = self.store.cache_get("agent_answer", cache_value)
+            if cached and cached.get("result") and cached.get("state"):
+                result = json.loads(json.dumps(cached["result"], ensure_ascii=False))
+                state = json.loads(json.dumps(cached["state"], ensure_ascii=False))
+                result["job_id"] = run_id
+                state["query_id"] = run_id
+                self.store.append_agent_event(run_id, "cache_hit", {"status": "complete"})
+                self.store.complete_agent_run(run_id, result, state)
+                self.store.append_agent_event(
+                    run_id, "completed", {
+                        "mode": result.get("mode"), "confidence": result.get("confidence"),
+                        "cached": True,
+                    }
+                )
+                return
             orchestrator = AgenticRAG(
                 self.config, store=self.store, service=self.service
             )
@@ -69,6 +96,12 @@ class AgentWorker:
                 initial_state=row.get("state_json") or None,
             )
             self.store.complete_agent_run(run_id, result, state.model_dump(mode="json"))
+            self.store.cache_set(
+                "agent_answer",
+                cache_value,
+                {"result": result, "state": state.model_dump(mode="json")},
+                hours=24,
+            )
         except AgentCancelled:
             self.store.fail_agent_run(run_id, "Cancelled by user", retryable=False)
             self.store.append_agent_event(run_id, "cancelled", {"status": "cancelled"})
